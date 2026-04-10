@@ -131,21 +131,18 @@ export function useMediaPipe(
       const middleThumbDist = Math.hypot(landmarks[4].x - landmarks[12].x, landmarks[4].y - landmarks[12].y);
 
       // Robust 3D checks for pinch gesture state
-      const isPinching = dist3D(thumbTip3D, indexTip3D) < 0.065;
-      const isMiddlePinching = dist3D(thumbTip3D, middleTip3D) < 0.065;
+      const isPinching = dist3D(thumbTip3D, indexTip3D) < 0.05;
 
       onHandUpdateRef.current({
         indexTip: getPt(8),
         thumbTip: getPt(4),
         middleTip: getPt(12),
         pinchDist,
-        middleThumbDist,
         indexUp,
         middleUp,
         ringUp,
         pinkyUp,
-        isPinching,
-        isMiddlePinching
+        isPinching
       });
     };
 

@@ -12,14 +12,13 @@ export function useCanvas(
   const lastUndoTime = useRef(0);
   const lastSelectTime = useRef(0);
   const particlesRef = useRef<Particle[]>([]);
+  const wasPinchingRef = useRef(false);
   const pinchCenterRef = useRef<Point | null>(null);
   
   const [selection, setSelection] = useState<{
     strokeId: string;
     initialPinchCenter: Point;
-    prevPinchDist: number;
     initialTransform: { scale: number; translateX: number; translateY: number };
-    action: 'MOVE' | 'SCALE';
   } | null>(null);
 
   const [mode, setMode] = useState<GestureMode>('IDLE');
@@ -149,14 +148,12 @@ export function useCanvas(
     if (mode === 'SELECTING' && pinchCenterRef.current) {
       ctx.save();
       ctx.beginPath();
-      ctx.arc(pinchCenterRef.current.x, pinchCenterRef.current.y, 20, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-      ctx.lineWidth = 3;
-      ctx.shadowBlur = 10;
-      ctx.shadowColor = 'white';
-      ctx.stroke();
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.arc(pinchCenterRef.current.x, pinchCenterRef.current.y, 15, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0, 255, 255, 0.4)';
       ctx.fill();
+      ctx.strokeStyle = '#00ffff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
       ctx.restore();
     }
 
@@ -200,106 +197,109 @@ export function useCanvas(
       return;
     }
 
-    const { indexTip, thumbTip, middleTip, pinchDist, middleThumbDist, indexUp, middleUp, ringUp, pinkyUp, isPinching, isMiddlePinching } = hand as any;
+    const { indexTip, thumbTip, pinchDist, indexUp, middleUp, ringUp, pinkyUp, isPinching } = hand as any;
+    
+    // Convert to client coordinates for UI collision
+    const clientX = indexTip.x;
+    const clientY = indexTip.y;
+    
+    let isHoveringBtn = false;
+    let clickedBtn: HTMLElement | null = null;
+    
+    const guiElements = document.querySelectorAll('.gesture-btn');
+    guiElements.forEach(btn => {
+      const rect = btn.getBoundingClientRect();
+      const pad = 25; // padding for easier targeting
+      if (
+        clientX >= rect.left - pad && clientX <= rect.right + pad &&
+        clientY >= rect.top - pad && clientY <= rect.bottom + pad
+      ) {
+        isHoveringBtn = true;
+        btn.classList.add('hovered-gesture-btn');
+        if (isPinching && !wasPinchingRef.current) {
+          clickedBtn = btn as HTMLElement;
+        }
+      } else {
+        btn.classList.remove('hovered-gesture-btn');
+      }
+    });
+
+    if (clickedBtn) {
+      (clickedBtn as HTMLElement).click();
+    }
+    
+    wasPinchingRef.current = isPinching;
+
+    if (isHoveringBtn) {
+      if (currentStrokeRef.current) {
+        setStrokes(prev => [...prev, currentStrokeRef.current!]);
+        currentStrokeRef.current = null;
+      }
+      setMode('IDLE');
+      onModeChange('IDLE');
+      render();
+      return;
+    }
+
     const pinchCenter = {
       x: (indexTip.x + thumbTip.x) / 2,
       y: (indexTip.y + thumbTip.y) / 2
     };
-    const middlePinchCenter = {
-      x: (middleTip.x + thumbTip.x) / 2,
-      y: (middleTip.y + thumbTip.y) / 2
-    };
 
     let newMode = mode;
 
-    if (isPinching || (isMiddlePinching && selection)) {
-      const activePinchCenter = isPinching ? pinchCenter : middlePinchCenter;
-      pinchCenterRef.current = activePinchCenter;
-      const currentAction = isPinching ? 'MOVE' : 'SCALE';
-      const currentDist = isPinching ? pinchDist : middleThumbDist;
-
+    if (isPinching) {
+      pinchCenterRef.current = pinchCenter;
       const isNewPinch = mode !== 'SELECTING';
 
       if (isNewPinch) {
-        if (isPinching) {
-          let nearestId: string | null = null;
-          let minDist = Infinity;
-          strokes.forEach(s => {
-            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-            s.points.forEach(p => {
-              if (p.x < minX) minX = p.x;
-              if (p.y < minY) minY = p.y;
-              if (p.x > maxX) maxX = p.x;
-              if (p.y > maxY) maxY = p.y;
-            });
-            const pivot = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
-
-            s.points.forEach(p => {
-              const tx = (p.x - pivot.x) * s.transform.scale + pivot.x + s.transform.translateX;
-              const ty = (p.y - pivot.y) * s.transform.scale + pivot.y + s.transform.translateY;
-              const d = Math.hypot(tx - activePinchCenter.x, ty - activePinchCenter.y);
-              if (d < minDist) {
-                minDist = d;
-                nearestId = s.id;
-              }
-            });
+        let nearestId: string | null = null;
+        let minDist = Infinity;
+        strokes.forEach(s => {
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          s.points.forEach(p => {
+            if (p.x < minX) minX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y > maxY) maxY = p.y;
           });
-          
-          if (nearestId && minDist < 60) {
-            newMode = 'SELECTING';
-            const stroke = strokes.find(s => s.id === nearestId);
-            setSelection({
-              strokeId: nearestId,
-              initialPinchCenter: activePinchCenter,
-              prevPinchDist: currentDist,
-              initialTransform: { ...stroke!.transform },
-              action: 'MOVE'
-            });
-          } else {
-            setSelection(null);
-            pinchCenterRef.current = null;
-            newMode = 'IDLE';
-          }
-        } else {
+          const pivot = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+
+          s.points.forEach(p => {
+            const tx = (p.x - pivot.x) * s.transform.scale + pivot.x + s.transform.translateX;
+            const ty = (p.y - pivot.y) * s.transform.scale + pivot.y + s.transform.translateY;
+            const d = Math.hypot(tx - pinchCenter.x, ty - pinchCenter.y);
+            if (d < minDist) {
+              minDist = d;
+              nearestId = s.id;
+            }
+          });
+        });
+        
+        if (nearestId && minDist < 60) {
           newMode = 'SELECTING';
-          setSelection(prev => ({
-            ...prev!,
-            initialPinchCenter: activePinchCenter,
-            prevPinchDist: currentDist,
-            initialTransform: strokes.find(s => s.id === prev!.strokeId)!.transform,
-            action: 'SCALE'
-          }));
+          const stroke = strokes.find(s => s.id === nearestId);
+          setSelection({
+            strokeId: nearestId,
+            initialPinchCenter: pinchCenter,
+            initialTransform: { ...stroke!.transform }
+          });
+        } else {
+          setSelection(null);
+          pinchCenterRef.current = null;
+          newMode = 'IDLE';
         }
       } else {
         newMode = 'SELECTING';
-        if (selection && selection.action !== currentAction) {
-          setSelection(prev => ({
-            ...prev!,
-            initialPinchCenter: activePinchCenter,
-            prevPinchDist: currentDist,
-            initialTransform: strokes.find(s => s.id === prev!.strokeId)!.transform,
-            action: currentAction
+        if (selection) {
+          const dx = pinchCenter.x - selection.initialPinchCenter.x;
+          const dy = pinchCenter.y - selection.initialPinchCenter.y;
+          setStrokes(prev => prev.map(s => {
+            if (s.id === selection.strokeId) {
+              return { ...s, transform: { ...s.transform, translateX: selection.initialTransform.translateX + dx, translateY: selection.initialTransform.translateY + dy } };
+            }
+            return s;
           }));
-        } else if (selection) {
-          if (currentAction === 'MOVE') {
-            const dx = activePinchCenter.x - selection.initialPinchCenter.x;
-            const dy = activePinchCenter.y - selection.initialPinchCenter.y;
-            setStrokes(prev => prev.map(s => {
-              if (s.id === selection.strokeId) {
-                return { ...s, transform: { ...s.transform, translateX: selection.initialTransform.translateX + dx, translateY: selection.initialTransform.translateY + dy } };
-              }
-              return s;
-            }));
-          } else {
-            const scaleDelta = currentDist / selection.prevPinchDist;
-            setStrokes(prev => prev.map(s => {
-              if (s.id === selection.strokeId) {
-                return { ...s, transform: { ...s.transform, scale: s.transform.scale * scaleDelta } };
-              }
-              return s;
-            }));
-            setSelection(prev => ({ ...prev!, prevPinchDist: currentDist }));
-          }
         }
       }
     } else {
@@ -335,8 +335,43 @@ export function useCanvas(
       } else if (indexUp && !middleUp && !ringUp && !pinkyUp && !isPinching) {
         if (selection) setSelection(null);
         
-        // Prevent drawing immediately after selecting/moving
-        if (Date.now() - lastSelectTime.current > 500) {
+        if (settings.mode === 'erase') {
+          newMode = 'ERASING';
+          
+          setStrokes(prev => prev.filter(s => {
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            s.points.forEach(p => {
+              if (p.x < minX) minX = p.x;
+              if (p.y < minY) minY = p.y;
+              if (p.x > maxX) maxX = p.x;
+              if (p.y > maxY) maxY = p.y;
+            });
+            const pivot = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+
+            const hit = s.points.some(p => {
+              const tx = (p.x - pivot.x) * s.transform.scale + pivot.x + s.transform.translateX;
+              const ty = (p.y - pivot.y) * s.transform.scale + pivot.y + s.transform.translateY;
+              const d = Math.hypot(tx - indexTip.x, ty - indexTip.y);
+              return d < s.brushSize * s.transform.scale + 20; // 20px erase radius padding
+            });
+            return !hit; // Keep strokes that are NOT hit
+          }));
+
+          // Eraser particles
+          if (Math.random() > 0.5) {
+            particlesRef.current.push({
+              x: indexTip.x + (Math.random() - 0.5) * 20,
+              y: indexTip.y + (Math.random() - 0.5) * 20,
+              vx: (Math.random() - 0.5) * 4,
+              vy: (Math.random() - 0.5) * 4,
+              life: 20,
+              maxLife: 20,
+              color: 'rgba(255,255,255,0.8)',
+              size: Math.random() * 3 + 2
+            });
+          }
+          
+        } else {
           newMode = 'DRAWING';
           
           // Spawn bubbles
@@ -380,8 +415,6 @@ export function useCanvas(
               currentStrokeRef.current.points.push(smoothedPoint);
             }
           }
-        } else {
-          newMode = 'IDLE';
         }
       } else {
         newMode = 'IDLE';

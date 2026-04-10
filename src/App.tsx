@@ -5,6 +5,7 @@ import { SettingsButton } from './components/SettingsButton';
 import { SettingsPanel } from './components/SettingsPanel';
 import { LoadingScreen } from './components/LoadingScreen';
 import { HowToUseModal } from './components/HowToUseModal';
+import { Pencil, Undo2, Redo2, Eraser } from 'lucide-react';
 
 export default function App() {
   const [settings, setSettings] = useState<DrawSettings>({
@@ -95,15 +96,37 @@ export default function App() {
         />
       )}
 
-      {/* Status Indicator */}
-      <div className="status-indicator">
-        {gestureMode === 'IDLE' && '🤚 IDLE'}
-        {gestureMode === 'DRAWING' && '✏️ DRAWING'}
-        {gestureMode === 'PEN_LIFTED' && '✋ PEN LIFTED'}
-        {gestureMode === 'ERASING' && '🖐️ ERASING'}
-        {gestureMode === 'SELECTING' && '🤏 SELECTING'}
-        {gestureMode === 'UNDO' && '🤟 UNDO'}
-        {gestureMode === 'FREEZE' && '👊 FREEZE'}
+      {/* Gesture Controls Toolbar */}
+      <div className={`fixed left-1/2 -translate-x-1/2 flex items-center gap-3 bg-[#1e1e1e]/80 backdrop-blur-xl p-2 rounded-full border border-white/10 shadow-2xl z-40 transition-all duration-300 ${isPanelOpen ? 'bottom-24 md:bottom-8' : 'bottom-8'}`}>
+        <button 
+          className={`gesture-btn flex items-center gap-2 px-5 py-2.5 rounded-full transition-all duration-300 ${settings.mode === 'draw' ? 'bg-cyan-500 text-white shadow-[0_0_15px_rgba(6,182,212,0.5)]' : 'text-gray-400 hover:text-white hover:bg-white/10'}`}
+          onClick={() => setSettings(s => ({ ...s, mode: 'draw' }))}
+        >
+          <Pencil className="w-5 h-5 pointer-events-none" />
+          <span className="font-medium pointer-events-none">Draw</span>
+        </button>
+        
+        <button 
+          className="gesture-btn p-3 rounded-full text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+          onClick={handleUndo}
+        >
+          <Undo2 className="w-5 h-5 pointer-events-none" />
+        </button>
+
+        <button 
+          className="gesture-btn p-3 rounded-full text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+          onClick={handleRedo}
+        >
+          <Redo2 className="w-5 h-5 pointer-events-none" />
+        </button>
+
+        <button 
+          className={`gesture-btn flex items-center gap-2 px-5 py-2.5 rounded-full transition-all duration-300 ${settings.mode === 'erase' ? 'bg-red-500 text-white shadow-[0_0_15px_rgba(239,68,68,0.5)]' : 'text-gray-400 hover:text-white hover:bg-white/10'}`}
+          onClick={() => setSettings(s => ({ ...s, mode: 'erase' }))}
+        >
+          <Eraser className="w-5 h-5 pointer-events-none" />
+          <span className="font-medium pointer-events-none">Erase</span>
+        </button>
       </div>
 
       {handCursor && handCursor.isVisible && (

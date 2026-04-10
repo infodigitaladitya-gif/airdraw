@@ -34,13 +34,11 @@ export interface HandData {
   thumbTip: Point;
   middleTip: Point;
   pinchDist: number;
-  middleThumbDist: number;
   indexUp: boolean;
   middleUp: boolean;
   ringUp: boolean;
   pinkyUp: boolean;
   isPinching: boolean;
-  isMiddlePinching: boolean;
 }
 
 export type GestureMode = 'IDLE' | 'DRAWING' | 'PEN_LIFTED' | 'ERASING' | 'SELECTING' | 'UNDO' | 'FREEZE';
