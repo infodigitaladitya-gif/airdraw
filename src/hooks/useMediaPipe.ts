@@ -98,18 +98,41 @@ export function useMediaPipe(
         drawSkeleton(skeletonCtx, landmarks, canvasWidth, canvasHeight, getPt);
       }
 
-      const fingerUp = (tip: number, pip: number) => landmarks[tip].y < landmarks[pip].y;
+      const getPt3D = (idx: number) => ({
+        x: landmarks[idx].x,
+        y: landmarks[idx].y,
+        z: landmarks[idx].z || 0
+      });
 
-      const indexUp = fingerUp(8, 6);
-      const middleUp = fingerUp(12, 10);
-      const ringUp = fingerUp(16, 14);
-      const pinkyUp = fingerUp(20, 18);
+      const dist3D = (p1: any, p2: any) => Math.sqrt(
+        Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2) + Math.pow(p1.z - p2.z, 2)
+      );
 
+      const wrist3D = getPt3D(0);
+      const thumbTip3D = getPt3D(4);
+      const indexPip3D = getPt3D(6);
+      const indexTip3D = getPt3D(8);
+      const middlePip3D = getPt3D(10);
+      const middleTip3D = getPt3D(12);
+      const ringPip3D = getPt3D(14);
+      const ringTip3D = getPt3D(16);
+      const pinkyPip3D = getPt3D(18);
+      const pinkyTip3D = getPt3D(20);
+
+      const fingerExtended = (tip: any, pip: any) => dist3D(tip, wrist3D) > dist3D(pip, wrist3D);
+
+      const indexUp = fingerExtended(indexTip3D, indexPip3D);
+      const middleUp = fingerExtended(middleTip3D, middlePip3D);
+      const ringUp = fingerExtended(ringTip3D, ringPip3D);
+      const pinkyUp = fingerExtended(pinkyTip3D, pinkyPip3D);
+
+      // Pinch distances in 2D for scaling calculations on standard screen coordinates
       const pinchDist = Math.hypot(landmarks[4].x - landmarks[8].x, landmarks[4].y - landmarks[8].y);
-      const isPinching = pinchDist < 0.05;
-
       const middleThumbDist = Math.hypot(landmarks[4].x - landmarks[12].x, landmarks[4].y - landmarks[12].y);
-      const isMiddlePinching = middleThumbDist < 0.05;
+
+      // Robust 3D checks for pinch gesture state
+      const isPinching = dist3D(thumbTip3D, indexTip3D) < 0.065;
+      const isMiddlePinching = dist3D(thumbTip3D, middleTip3D) < 0.065;
 
       onHandUpdateRef.current({
         indexTip: getPt(8),
