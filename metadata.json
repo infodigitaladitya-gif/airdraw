@@ -1,0 +1,7 @@
+{
+  "name": "AirDraw",
+  "description": "Draw with air. No stylus. No touch. Just your finger.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
