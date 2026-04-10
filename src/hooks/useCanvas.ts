@@ -403,17 +403,13 @@ export function useCanvas(
             const lastPoint = currentStrokeRef.current.points[currentStrokeRef.current.points.length - 1];
             const dx = indexTip.x - lastPoint.x;
             const dy = indexTip.y - lastPoint.y;
-            const dist = Math.hypot(dx, dy);
             
-            // Only add point if it moved a minimum distance to reduce jitter
-            if (dist > 3) {
-              // Apply slight smoothing (EMA)
-              const smoothedPoint = {
-                x: lastPoint.x + dx * 0.6,
-                y: lastPoint.y + dy * 0.6
-              };
-              currentStrokeRef.current.points.push(smoothedPoint);
-            }
+            // Apply slight smoothing
+            const smoothedPoint = {
+              x: lastPoint.x + dx * 0.8,
+              y: lastPoint.y + dy * 0.8
+            };
+            currentStrokeRef.current.points.push(smoothedPoint);
           }
         }
       } else {
