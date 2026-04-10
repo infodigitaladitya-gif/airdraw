@@ -212,60 +212,75 @@ export function useCanvas(
 
     let newMode = mode;
 
-    if (isPinching || isMiddlePinching) {
+    if (isPinching || (isMiddlePinching && selection)) {
       const activePinchCenter = isPinching ? pinchCenter : middlePinchCenter;
       pinchCenterRef.current = activePinchCenter;
       const currentAction = isPinching ? 'MOVE' : 'SCALE';
       const currentDist = isPinching ? pinchDist : middleThumbDist;
 
-      if (!selection) {
-        let nearestId: string | null = null;
-        let minDist = Infinity;
-        strokes.forEach(s => {
-          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-          s.points.forEach(p => {
-            if (p.x < minX) minX = p.x;
-            if (p.y < minY) minY = p.y;
-            if (p.x > maxX) maxX = p.x;
-            if (p.y > maxY) maxY = p.y;
-          });
-          const pivot = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+      const isNewPinch = mode !== 'SELECTING';
 
-          s.points.forEach(p => {
-            const tx = (p.x - pivot.x) * s.transform.scale + pivot.x + s.transform.translateX;
-            const ty = (p.y - pivot.y) * s.transform.scale + pivot.y + s.transform.translateY;
-            const d = Math.hypot(tx - activePinchCenter.x, ty - activePinchCenter.y);
-            if (d < minDist) {
-              minDist = d;
-              nearestId = s.id;
-            }
+      if (isNewPinch) {
+        if (isPinching) {
+          let nearestId: string | null = null;
+          let minDist = Infinity;
+          strokes.forEach(s => {
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            s.points.forEach(p => {
+              if (p.x < minX) minX = p.x;
+              if (p.y < minY) minY = p.y;
+              if (p.x > maxX) maxX = p.x;
+              if (p.y > maxY) maxY = p.y;
+            });
+            const pivot = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+
+            s.points.forEach(p => {
+              const tx = (p.x - pivot.x) * s.transform.scale + pivot.x + s.transform.translateX;
+              const ty = (p.y - pivot.y) * s.transform.scale + pivot.y + s.transform.translateY;
+              const d = Math.hypot(tx - activePinchCenter.x, ty - activePinchCenter.y);
+              if (d < minDist) {
+                minDist = d;
+                nearestId = s.id;
+              }
+            });
           });
-        });
-        
-        if (nearestId && minDist < 60) {
-          newMode = 'SELECTING';
-          const stroke = strokes.find(s => s.id === nearestId);
-          setSelection({
-            strokeId: nearestId,
-            initialPinchCenter: activePinchCenter,
-            prevPinchDist: currentDist,
-            initialTransform: { ...stroke!.transform },
-            action: currentAction
-          });
+          
+          if (nearestId && minDist < 60) {
+            newMode = 'SELECTING';
+            const stroke = strokes.find(s => s.id === nearestId);
+            setSelection({
+              strokeId: nearestId,
+              initialPinchCenter: activePinchCenter,
+              prevPinchDist: currentDist,
+              initialTransform: { ...stroke!.transform },
+              action: 'MOVE'
+            });
+          } else {
+            setSelection(null);
+            pinchCenterRef.current = null;
+            newMode = 'IDLE';
+          }
         } else {
-          newMode = 'IDLE';
-        }
-      } else {
-        newMode = 'SELECTING';
-        if (selection.action !== currentAction) {
+          newMode = 'SELECTING';
           setSelection(prev => ({
             ...prev!,
             initialPinchCenter: activePinchCenter,
             prevPinchDist: currentDist,
-            initialTransform: strokes.find(s => s.id === selection.strokeId)!.transform,
+            initialTransform: strokes.find(s => s.id === prev!.strokeId)!.transform,
+            action: 'SCALE'
+          }));
+        }
+      } else {
+        newMode = 'SELECTING';
+        if (selection && selection.action !== currentAction) {
+          setSelection(prev => ({
+            ...prev!,
+            initialPinchCenter: activePinchCenter,
+            prevPinchDist: currentDist,
+            initialTransform: strokes.find(s => s.id === prev!.strokeId)!.transform,
             action: currentAction
           }));
-        } else {
+        } else if (selection) {
           if (currentAction === 'MOVE') {
             const dx = activePinchCenter.x - selection.initialPinchCenter.x;
             const dy = activePinchCenter.y - selection.initialPinchCenter.y;
@@ -288,11 +303,7 @@ export function useCanvas(
         }
       }
     } else {
-      if (selection) {
-        setSelection(null);
-        pinchCenterRef.current = null;
-        lastSelectTime.current = Date.now();
-      }
+      pinchCenterRef.current = null;
       
       if (indexUp && pinkyUp && !middleUp && !ringUp) {
         newMode = 'UNDO';
@@ -315,12 +326,15 @@ export function useCanvas(
         }
       } else if (indexUp && middleUp) {
         newMode = 'PEN_LIFTED';
+        if (selection) setSelection(null);
         if (currentStrokeRef.current) {
           const strokeToAdd = currentStrokeRef.current;
           setStrokes(prev => [...prev, strokeToAdd]);
           currentStrokeRef.current = null;
         }
       } else if (indexUp && !middleUp && !ringUp && !pinkyUp && !isPinching) {
+        if (selection) setSelection(null);
+        
         // Prevent drawing immediately after selecting/moving
         if (Date.now() - lastSelectTime.current > 500) {
           newMode = 'DRAWING';
