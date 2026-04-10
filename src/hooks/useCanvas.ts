@@ -12,12 +12,14 @@ export function useCanvas(
   const lastUndoTime = useRef(0);
   const lastSelectTime = useRef(0);
   const particlesRef = useRef<Particle[]>([]);
+  const pinchCenterRef = useRef<Point | null>(null);
   
   const [selection, setSelection] = useState<{
     strokeId: string;
     initialPinchCenter: Point;
     prevPinchDist: number;
     initialTransform: { scale: number; translateX: number; translateY: number };
+    action: 'MOVE' | 'SCALE';
   } | null>(null);
 
   const [mode, setMode] = useState<GestureMode>('IDLE');
@@ -82,14 +84,30 @@ export function useCanvas(
       ctx.stroke();
 
       if (selection?.strokeId === stroke.id) {
-        ctx.strokeStyle = 'white';
+        ctx.strokeStyle = '#00ffff';
         ctx.lineWidth = 2;
-        ctx.setLineDash([5, 5]);
-        ctx.shadowBlur = 0;
-        ctx.globalAlpha = 1;
-        const padding = stroke.brushSize / 2 + 5;
-        ctx.strokeRect(minX - padding, minY - padding, maxX - minX + padding * 2, maxY - minY + padding * 2);
-        ctx.setLineDash([]);
+        ctx.globalAlpha = 0.8;
+        ctx.shadowColor = '#00ffff';
+        ctx.shadowBlur = 10;
+        const padding = stroke.brushSize / 2 + 10;
+        
+        ctx.beginPath();
+        const r = 8;
+        ctx.roundRect(minX - padding, minY - padding, maxX - minX + padding * 2, maxY - minY + padding * 2, r);
+        ctx.stroke();
+        
+        ctx.fillStyle = 'white';
+        const handles = [
+          [minX - padding, minY - padding],
+          [maxX + padding, minY - padding],
+          [minX - padding, maxY + padding],
+          [maxX + padding, maxY + padding]
+        ];
+        handles.forEach(([hx, hy]) => {
+          ctx.beginPath();
+          ctx.arc(hx, hy, 5, 0, Math.PI * 2);
+          ctx.fill();
+        });
       }
 
       ctx.restore();
@@ -125,6 +143,20 @@ export function useCanvas(
         ctx.shadowColor = stroke.color;
       }
       ctx.stroke();
+      ctx.restore();
+    }
+
+    if (mode === 'SELECTING' && pinchCenterRef.current) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(pinchCenterRef.current.x, pinchCenterRef.current.y, 20, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+      ctx.lineWidth = 3;
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = 'white';
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.fill();
       ctx.restore();
     }
 
@@ -168,82 +200,101 @@ export function useCanvas(
       return;
     }
 
-    const { indexTip, thumbTip, pinchDist, indexUp, middleUp, ringUp, pinkyUp, isPinching } = hand;
+    const { indexTip, thumbTip, middleTip, pinchDist, middleThumbDist, indexUp, middleUp, ringUp, pinkyUp, isPinching, isMiddlePinching } = hand as any;
     const pinchCenter = {
       x: (indexTip.x + thumbTip.x) / 2,
       y: (indexTip.y + thumbTip.y) / 2
     };
+    const middlePinchCenter = {
+      x: (middleTip.x + thumbTip.x) / 2,
+      y: (middleTip.y + thumbTip.y) / 2
+    };
 
     let newMode = mode;
 
-    if (mode === 'SELECTING') {
-      if (!isPinching) {
-        setSelection(null);
-        newMode = indexUp && middleUp ? 'PEN_LIFTED' : 'IDLE';
-        lastSelectTime.current = Date.now();
-      } else if (selection) {
-        const dx = pinchCenter.x - selection.initialPinchCenter.x;
-        const dy = pinchCenter.y - selection.initialPinchCenter.y;
-        const scaleDelta = pinchDist / selection.prevPinchDist;
-        
-        setStrokes(prev => prev.map(s => {
-          if (s.id === selection.strokeId) {
-            return {
-              ...s,
-              transform: {
-                ...s.transform,
-                translateX: selection.initialTransform.translateX + dx,
-                translateY: selection.initialTransform.translateY + dy,
-                scale: s.transform.scale * scaleDelta
-              }
-            };
-          }
-          return s;
-        }));
+    if (isPinching || isMiddlePinching) {
+      const activePinchCenter = isPinching ? pinchCenter : middlePinchCenter;
+      pinchCenterRef.current = activePinchCenter;
+      const currentAction = isPinching ? 'MOVE' : 'SCALE';
+      const currentDist = isPinching ? pinchDist : middleThumbDist;
 
-        setSelection(prev => ({ ...prev!, prevPinchDist: pinchDist }));
+      if (!selection) {
+        let nearestId: string | null = null;
+        let minDist = Infinity;
+        strokes.forEach(s => {
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          s.points.forEach(p => {
+            if (p.x < minX) minX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y > maxY) maxY = p.y;
+          });
+          const pivot = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+
+          s.points.forEach(p => {
+            const tx = (p.x - pivot.x) * s.transform.scale + pivot.x + s.transform.translateX;
+            const ty = (p.y - pivot.y) * s.transform.scale + pivot.y + s.transform.translateY;
+            const d = Math.hypot(tx - activePinchCenter.x, ty - activePinchCenter.y);
+            if (d < minDist) {
+              minDist = d;
+              nearestId = s.id;
+            }
+          });
+        });
+        
+        if (nearestId && minDist < 60) {
+          newMode = 'SELECTING';
+          const stroke = strokes.find(s => s.id === nearestId);
+          setSelection({
+            strokeId: nearestId,
+            initialPinchCenter: activePinchCenter,
+            prevPinchDist: currentDist,
+            initialTransform: { ...stroke!.transform },
+            action: currentAction
+          });
+        } else {
+          newMode = 'IDLE';
+        }
+      } else {
+        newMode = 'SELECTING';
+        if (selection.action !== currentAction) {
+          setSelection(prev => ({
+            ...prev!,
+            initialPinchCenter: activePinchCenter,
+            prevPinchDist: currentDist,
+            initialTransform: strokes.find(s => s.id === selection.strokeId)!.transform,
+            action: currentAction
+          }));
+        } else {
+          if (currentAction === 'MOVE') {
+            const dx = activePinchCenter.x - selection.initialPinchCenter.x;
+            const dy = activePinchCenter.y - selection.initialPinchCenter.y;
+            setStrokes(prev => prev.map(s => {
+              if (s.id === selection.strokeId) {
+                return { ...s, transform: { ...s.transform, translateX: selection.initialTransform.translateX + dx, translateY: selection.initialTransform.translateY + dy } };
+              }
+              return s;
+            }));
+          } else {
+            const scaleDelta = currentDist / selection.prevPinchDist;
+            setStrokes(prev => prev.map(s => {
+              if (s.id === selection.strokeId) {
+                return { ...s, transform: { ...s.transform, scale: s.transform.scale * scaleDelta } };
+              }
+              return s;
+            }));
+            setSelection(prev => ({ ...prev!, prevPinchDist: currentDist }));
+          }
+        }
       }
     } else {
-      if (isPinching) {
-        if (!selection) {
-          let nearestId: string | null = null;
-          let minDist = Infinity;
-          strokes.forEach(s => {
-            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-            s.points.forEach(p => {
-              if (p.x < minX) minX = p.x;
-              if (p.y < minY) minY = p.y;
-              if (p.x > maxX) maxX = p.x;
-              if (p.y > maxY) maxY = p.y;
-            });
-            const pivot = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
-
-            s.points.forEach(p => {
-              const tx = (p.x - pivot.x) * s.transform.scale + pivot.x + s.transform.translateX;
-              const ty = (p.y - pivot.y) * s.transform.scale + pivot.y + s.transform.translateY;
-              const d = Math.hypot(tx - pinchCenter.x, ty - pinchCenter.y);
-              if (d < minDist) {
-                minDist = d;
-                nearestId = s.id;
-              }
-            });
-          });
-          if (nearestId && minDist < 60) {
-            newMode = 'SELECTING';
-            const stroke = strokes.find(s => s.id === nearestId);
-            setSelection({
-              strokeId: nearestId,
-              initialPinchCenter: pinchCenter,
-              prevPinchDist: pinchDist,
-              initialTransform: { ...stroke!.transform }
-            });
-          } else {
-             newMode = 'IDLE';
-          }
-        } else {
-          newMode = 'SELECTING';
-        }
-      } else if (indexUp && pinkyUp && !middleUp && !ringUp) {
+      if (selection) {
+        setSelection(null);
+        pinchCenterRef.current = null;
+        lastSelectTime.current = Date.now();
+      }
+      
+      if (indexUp && pinkyUp && !middleUp && !ringUp) {
         newMode = 'UNDO';
         const now = Date.now();
         if (now - lastUndoTime.current > 1000) {

@@ -13,8 +13,8 @@ const drawSkeleton = (ctx: CanvasRenderingContext2D, landmarks: any, width: numb
     ctx.stroke();
   };
 
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+  ctx.lineWidth = 1;
   ctx.shadowBlur = 0;
 
   // Wrist to fingers
@@ -34,12 +34,12 @@ const drawSkeleton = (ctx: CanvasRenderingContext2D, landmarks: any, width: numb
 
   // Dots
   ctx.fillStyle = 'white';
-  ctx.shadowBlur = 10; // White glow
+  ctx.shadowBlur = 4; // White glow
   ctx.shadowColor = 'white';
   for (let i = 0; i < 21; i++) {
     const pt = getPt(i);
     ctx.beginPath();
-    ctx.arc(pt.x, pt.y, 5, 0, 2 * Math.PI); // Radius 5px
+    ctx.arc(pt.x, pt.y, 2, 0, 2 * Math.PI); // Radius 2px
     ctx.fill();
   }
 };
@@ -108,15 +108,21 @@ export function useMediaPipe(
       const pinchDist = Math.hypot(landmarks[4].x - landmarks[8].x, landmarks[4].y - landmarks[8].y);
       const isPinching = pinchDist < 0.05;
 
+      const middleThumbDist = Math.hypot(landmarks[4].x - landmarks[12].x, landmarks[4].y - landmarks[12].y);
+      const isMiddlePinching = middleThumbDist < 0.05;
+
       onHandUpdateRef.current({
         indexTip: getPt(8),
         thumbTip: getPt(4),
+        middleTip: getPt(12),
         pinchDist,
+        middleThumbDist,
         indexUp,
         middleUp,
         ringUp,
         pinkyUp,
-        isPinching
+        isPinching,
+        isMiddlePinching
       });
     };
 

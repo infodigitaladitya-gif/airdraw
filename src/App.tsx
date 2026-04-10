@@ -16,7 +16,7 @@ export default function App() {
     dimLevel: 0,
     gestureControl: false,
   });
-  const [isPanelOpen, setIsPanelOpen] = useState(window.innerWidth >= 768);
+  const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768);
   const [handCursor, setHandCursor] = useState<{x: number, y: number, isPinching: boolean, isVisible: boolean} | null>(null);
   const [gestureMode, setGestureMode] = useState<GestureMode>('IDLE');
